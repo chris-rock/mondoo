@@ -50,6 +50,8 @@ MONDOO_REGISTRATION_TOKEN=''
 
 TIMER='60'
 SPLAY='60'
+ANNOTATION=''
+NAME=''
 
 print_usage() {
   echo "usage: [-i]" >&2
@@ -66,9 +68,13 @@ print_usage() {
   echo "                     Default 60 minutes" >&2
   echo "    -y <splay>:      Change the splay." >&2
   echo "                     Default 60 minutes" >&2
+  echo "    -n <name>:       Set asset name." >&2
+  echo "                     Default uses hostname" >&2
+  echo "    -a <annotation>: Set annotations as key/value pairs (e.g., foo=bar,biz=bap)." >&2
+  echo "                     Adds these annotations to the mondoo.yml. (default [])" >&2
 }
 
-while getopts 'i:s:u:vt:vr:y:' flag; do
+while getopts 'i:s:u:vt:vr:y:n:a:' flag; do
   case "${flag}" in
     i) MONDOO_INSTALLER="${OPTARG}" ;;
     s) MONDOO_SERVICE="${OPTARG}" ;;
@@ -76,6 +82,8 @@ while getopts 'i:s:u:vt:vr:y:' flag; do
     u) MONDOO_AUTOUPDATER="${OPTARG}" ;;
     r) TIMER="${OPTARG}" ;;
     y) SPLAY="${OPTARG}" ;;
+    n) NAME="${OPTARG}" ;;
+    a) ANNOTATION="${OPTARG}" ;;
     *) print_usage
        exit 1 ;;
   esac
@@ -506,7 +514,7 @@ configure_cloudshell_installer() {
     purple_bold "\n* Authenticate with Mondoo Platform"
     config_path="$HOME/.config/mondoo"
     mkdir -p "$config_path"
-    ${MONDOO_BINARY_PATH} login --config "$config_path/mondoo.yml" --token "$MONDOO_REGISTRATION_TOKEN" --timer "$TIMER" --splay "$SPLAY"
+    ${MONDOO_BINARY_PATH} login --config "$config_path/mondoo.yml" --token "$MONDOO_REGISTRATION_TOKEN" --timer "$TIMER" --splay "$SPLAY" --name "$NAME" --annotation "$ANNOTATION"
   }
 }
 
@@ -557,11 +565,33 @@ configure_token() {
   fi
 }
 
+configure_login_cmd() {
+  # Base command
+  login_cmd="sudo_cmd ${MONDOO_BINARY_PATH} login --config /etc/opt/mondoo/mondoo.yml --token \"$MONDOO_REGISTRATION_TOKEN\" --timer \"$TIMER\" --splay \"$SPLAY\""
+
+  # Add --annotation option if set
+  if [ -n "$ANNOTATION" ]; then
+    login_cmd="$login_cmd --annotation \"$ANNOTATION\""
+  fi
+
+  # Add --name option if set
+  if [ -n "$NAME" ]; then
+    login_cmd="$login_cmd --name \"$NAME\""
+  fi
+
+}
+
 configure_macos_token() {
   purple_bold "\n* Authenticate with Mondoo Platform"
   config_path="$HOME/.config/mondoo"
   mkdir -p "$config_path"
-  ${MONDOO_BINARY_PATH} login --config "$config_path/mondoo.yml" --token "$MONDOO_REGISTRATION_TOKEN" --timer "$TIMER" --splay "$SPLAY"
+
+  # Get the login command
+  login_cmd=$(configure_login_cmd "$MONDOO_BINARY_PATH" "$MONDOO_REGISTRATION_TOKEN" "$TIMER" "$SPLAY" "$ANNOTATION" "$NAME")
+  
+  # Execute the command
+  eval "$login_cmd"
+
   if [ "$MONDOO_SERVICE" = "enable" ]; then
     sudo_cmd cp "$config_path/mondoo.yml" /Library/Mondoo/etc/mondoo.yml
   fi
@@ -570,7 +600,12 @@ configure_macos_token() {
 configure_linux_token() {
   purple_bold "\n* Authenticate with Mondoo Platform"
   sudo_cmd mkdir -p "/etc/opt/mondoo/"
-  sudo_cmd ${MONDOO_BINARY_PATH} login --config /etc/opt/mondoo/mondoo.yml --token "$MONDOO_REGISTRATION_TOKEN" --timer "$TIMER" --splay "$SPLAY"
+  
+  # Get the login command
+  login_cmd=$(configure_login_cmd "$MONDOO_BINARY_PATH" "$MONDOO_REGISTRATION_TOKEN" "$TIMER" "$SPLAY" "$ANNOTATION" "$NAME")
+
+  # Execute the command
+  eval "$login_cmd"
 
   if [ "$(cat /proc/1/comm)" = "init" ]; then
     purple_bold "\n* Restart upstart service"
