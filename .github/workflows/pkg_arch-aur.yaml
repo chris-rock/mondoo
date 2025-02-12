@@ -72,7 +72,7 @@ jobs:
       - name: Publish cnquery AUR package
         if: ${{ !inputs.skip }}
         continue-on-error: true
-        uses: KSXGitHub/github-actions-deploy-aur@v3.0.1
+        uses: KSXGitHub/github-actions-deploy-aur@v4.1.0
         with:
           pkgname: cnquery
           pkgbuild: packages/archlinux/cnquery/PKGBUILD
@@ -85,7 +85,7 @@ jobs:
       - name: Publish cnspec AUR package
         if: ${{ !inputs.skip }}
         continue-on-error: true
-        uses: KSXGitHub/github-actions-deploy-aur@v3.0.1
+        uses: KSXGitHub/github-actions-deploy-aur@v4.1.0
         with:
           pkgname: cnspec
           pkgbuild: packages/archlinux/cnspec/PKGBUILD
@@ -98,7 +98,7 @@ jobs:
       - name: Publish mondoo AUR package
         if: ${{ !inputs.skip }}
         continue-on-error: true
-        uses: KSXGitHub/github-actions-deploy-aur@v3.0.1
+        uses: KSXGitHub/github-actions-deploy-aur@v4.1.0
         with:
           pkgname: mondoo
           pkgbuild: packages/archlinux/mondoo/PKGBUILD
