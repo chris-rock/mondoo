@@ -50,7 +50,7 @@ jobs:
                       "fields": [
                         {
                           "type": "mrkdwn",
-                          "text": "<${{ github.event.repository.html_url }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}|${{ github.workflow }}>"
+                          "text": "<${{ github.event.repository.html_url }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}|${{ github.workflow }} (${{ matrix.dockerfile}})>"
                         },
                         {
                           "type": "mrkdwn",
@@ -99,7 +99,7 @@ jobs:
                       "fields": [
                         {
                           "type": "mrkdwn",
-                          "text": "<${{ github.event.repository.html_url }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}|${{ github.workflow }}>"
+                          "text": "<${{ github.event.repository.html_url }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}|${{ github.workflow }} (${{ matrix.dockerfile }})>"
                         },
                         {
                           "type": "mrkdwn",
