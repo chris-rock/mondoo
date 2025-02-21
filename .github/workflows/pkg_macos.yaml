@@ -1,23 +1,53 @@
 name: 'PKG: macOS Universal pkg Release'
 
 on:
+  workflow_call:
+    inputs:
+      version:
+        description: 'Package Version'
+        required: true
+        default: '8.99.99'
+        type: 'string'
+      name:
+        description: 'Package Name'
+        required: false
+        default: 'mondoo'
+        type: 'string'
+      skip-publish:
+        description: 'Skip publish?'
+        required: false
+        default: false
+        type: boolean
+      bucket:
+        description: 'GCP Release Bucket Name'
+        required: true
+        default: 'releases-us.mondoo.io'
+        type: string
   workflow_dispatch:
     inputs:
       version:
         description: 'Package Version'
         required: true
         default: '0.0.1'
+        type: 'string'
       name:
         description: 'Package Name'
         required: false
         default: 'mondoo'
+        type: 'string'
       skip-publish:
         description: 'Skip publish?'
         required: false
         default: false
         type: boolean
-  release:
-    types: [published]
+      bucket:
+        description: 'GCP Release Bucket Name'
+        required: true
+        default: 'releases-us.mondoo.io'
+        type: choice
+        options:
+          - 'releases-us.mondoo.io'
+          - 'releases-com-test'
 
 jobs:
   pkg:
@@ -26,33 +56,10 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Set Version (Workflow Dispatch)
-        if: github.event_name == 'workflow_dispatch'
-        run: |
-          echo VERSION=${{ inputs.version }} >> $GITHUB_ENV
-      - name: Set Version (Release Event)
-        if: github.event_name == 'release'
-        run: |
-          echo VERSION=${{ github.event.release.tag_name }} >> $GITHUB_ENV
-      - name: Unified Version
-        id: version
-        run: |
-          INPUT_NAME=${{ inputs.name }}
-          if [[ ${INPUT_NAME} == '' ]]; then
-            echo "Name is empty, using default"
-            echo "name=mondoo" >> $GITHUB_OUTPUT
-          else
-            echo "Name: ${INPUT_NAME}"
-            echo "name=${INPUT_NAME}" >> $GITHUB_OUTPUT
-          fi
-          V=$(echo $VERSION | sed 's/v//')
-          echo "Version: $V"
-          echo "version=${V}" >> $GITHUB_OUTPUT
       - name: Ensure version of cnquery and cnspec are available
         run: |
-          curl -sL --head --fail https://github.com/mondoohq/cnquery/releases/download/v${{ steps.version.outputs.version }}/cnquery_${{ steps.version.outputs.version }}_darwin_amd64.tar.gz
-          curl -sL --head --fail https://github.com/mondoohq/cnspec/releases/download/v${{ steps.version.outputs.version }}/cnspec_${{ steps.version.outputs.version }}_darwin_amd64.tar.gz
+          curl -sL --head --fail https://github.com/mondoohq/cnquery/releases/download/v${{ inputs.version }}/cnquery_${{ inputs.version }}_darwin_amd64.tar.gz
+          curl -sL --head --fail https://github.com/mondoohq/cnspec/releases/download/v${{ inputs.version }}/cnspec_${{ inputs.version }}_darwin_amd64.tar.gz
       - name: Setup local keychain for signing certificates
         run: |
           KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
@@ -71,35 +78,35 @@ jobs:
         env:
           APPLE_KEYS_CODESIGN_ID: ${{ secrets.APPLE_KEYS_CODESIGN_ID }}
           APPLE_KEYS_PRODUCTSIGN_ID: ${{ secrets.APPLE_KEYS_PRODUCTSIGN_ID }}
-          PKGNAME: ${{ steps.version.outputs.name }}
+          PKGNAME: ${{ inputs.name }}
         run: |
-          ${GITHUB_WORKSPACE}/packages/macos/build-pkg.sh ${{ steps.version.outputs.version }}
+          ${GITHUB_WORKSPACE}/packages/macos/build-pkg.sh ${{ inputs.version }}
       - name: Inspect Distribution
         if: ${{ always() }}
         run: ls -lhR
       ########## Sign Package. ##########
       - name: Package Sign Package (productsign)
         run: |
-          productsign --sign "${{ secrets.APPLE_KEYS_PRODUCTSIGN_ID }}" dist/${{ steps.version.outputs.name }}-macos-universal-${{ steps.version.outputs.version }}.pkg dist/${{ steps.version.outputs.name }}_${{ steps.version.outputs.version }}_darwin_universal.pkg
+          productsign --sign "${{ secrets.APPLE_KEYS_PRODUCTSIGN_ID }}" dist/${{ inputs.name }}-macos-universal-${{ inputs.version }}.pkg dist/${{ inputs.name }}_${{ inputs.version }}_darwin_universal.pkg
       ########## Sign Package. ##########
       - name: Notarize Package
         uses: lando/notarize-action@v2
         with:
-          product-path: dist/${{ steps.version.outputs.name }}_${{ steps.version.outputs.version }}_darwin_universal.pkg
+          product-path: dist/${{ inputs.name }}_${{ inputs.version }}_darwin_universal.pkg
           appstore-connect-username: ${{ secrets.APPLE_ACCOUNT_USERNAME }}
           appstore-connect-password: ${{ secrets.APPLE_ACCOUNT_PASSWORD }}
           appstore-connect-team-id: ${{ secrets.APPLE_ACCOUNT_TEAM_ID }}
-          primary-bundle-id: 'com.${{ steps.version.outputs.name }}.client'
+          primary-bundle-id: 'com.${{ inputs.name }}.client'
       - name: "Staple Release Build"
         uses: mondoohq/xcode-staple@v1
         with:
-          product-path: dist/${{ steps.version.outputs.name }}_${{ steps.version.outputs.version }}_darwin_universal.pkg
+          product-path: dist/${{ inputs.name }}_${{ inputs.version }}_darwin_universal.pkg
       ########## Save Package as Artifact. ##########
       - name: Archive Notarized Package
         uses: actions/upload-artifact@v4
         with:
           name: notarized-package
-          path: dist/${{ steps.version.outputs.name }}_${{ steps.version.outputs.version }}_darwin_universal.pkg
+          path: dist/${{ inputs.name }}_${{ inputs.version }}_darwin_universal.pkg
           retention-days: 30
 
   publish:
@@ -140,23 +147,15 @@ jobs:
         uses: 'google-github-actions/setup-gcloud@v2'
       - name: Verify access to release bucket
         run: |
-          gsutil ls gs://releases-us.mondoo.io/mondoo
+          gsutil ls gs://${{ inputs.bucket }}/mondoo
       - name: Upload static content to buckets
+        if: ${{ !inputs.skip-publish }}
         run: |
           cd dist
           echo "${CHECKSUM}" >> checksums.macos.txt
-          gsutil cp checksums.macos.txt gs://releases-us.mondoo.io/mondoo/${VERSION}/checksums.macos.txt
-          gsutil cp ${PKG} gs://releases-us.mondoo.io/mondoo/${VERSION}/${PKG}
-      - name: Reindex folder on releaser.mondoo.com
-        uses: peter-evans/repository-dispatch@v3
-        with:
-          token: ${{ secrets.RELEASR_ACTION_TOKEN }}
-          repository: "mondoohq/releasr"
-          event-type: reindex
-          client-payload: '{
-            "reindex-path": "mondoo/${{ env.VERSION }}",
-            "bucket": "releases-us.mondoo.io"
-            }'
+          gsutil cp checksums.macos.txt gs://${{ inputs.bucket }}/mondoo/${VERSION}/checksums.macos.txt
+          gsutil cp ${PKG} gs://${{ inputs.bucket }}/mondoo/${VERSION}/${PKG}
+      # TODO: move this at the end of the parent pipeline
       - name: Wait a bit...
         run: sleep 120
       - name: Trigger Homebrew Generation

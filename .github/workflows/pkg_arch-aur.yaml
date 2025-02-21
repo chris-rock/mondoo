@@ -1,6 +1,18 @@
 name: 'PKG: Archlinux AUR Release'
 
 on:
+  workflow_call:
+    inputs:
+      version:
+        description: "Version to release"
+        required: true
+        default: "8.99.99"
+        type: string
+      skip:
+        description: "Skip release"
+        required: false
+        default: false
+        type: boolean
   workflow_dispatch:
     inputs:
       version:
@@ -13,45 +25,11 @@ on:
         required: false
         default: false
         type: boolean
-  release:
-    types: [published]
 
 jobs:
-  setup:
-    runs-on: ubuntu-latest
-    name: 'Unify Inputs'
-    outputs:
-      version: ${{ steps.version.outputs.version }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Set Version (Workflow Dispatch)
-        if: github.event_name == 'workflow_dispatch'
-        run: |
-          echo VERSION=${{ inputs.version }} >> $GITHUB_ENV
-      - name: Set Version (Release Event)
-        if: github.event_name == 'release'
-        run: |
-          echo VERSION=${{ github.event.release.tag_name }} >> $GITHUB_ENV
-      - name: Unified Version
-        id: version
-        run: |
-          INPUT_NAME=${{ inputs.name }}
-          if [[ ${INPUT_NAME} == '' ]]; then
-            echo "Name is empty, using default"
-            echo "name=mondoo" >> $GITHUB_OUTPUT
-          else
-            echo "Name: ${INPUT_NAME}"
-            echo "name=${INPUT_NAME}" >> $GITHUB_OUTPUT
-          fi
-          V=$(echo $VERSION | sed 's/v//')
-          echo "Version: $V"
-          echo "version=${V}" >> $GITHUB_OUTPUT
-
   update-pkgs:
     runs-on: ubuntu-latest
     name: 'Generate & Locally Commit PKGBUILDs'
-    needs: setup
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -66,9 +44,9 @@ jobs:
       - name: 'DEBUG: Show generated package versions'
         run: |
           cd packages/archlinux
-          echo "cnquery: $(cat cnquery/PKGBUILD | grep orignalVersion=)"
-          echo "cnspec: $(cat cnspec/PKGBUILD | grep orignalVersion=)"
-          echo "mondoo: $(cat mondoo/PKGBUILD | grep orignalVersion=)"
+          echo "cnquery: $(grep orignalVersion= cnquery/PKGBUILD)"
+          echo "cnspec: $(grep orignalVersion= cnspec/PKGBUILD)"
+          echo "mondoo: $(grep orignalVersion= mondoo/PKGBUILD)"
       - name: Publish cnquery AUR package
         if: ${{ !inputs.skip }}
         continue-on-error: true
@@ -79,7 +57,7 @@ jobs:
           commit_username: ${{ secrets.AUR_USERNAME }}
           commit_email: ${{ secrets.AUR_EMAIL }}
           ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
-          commit_message: ${{ needs.setup.outputs.version }}
+          commit_message: ${{ inputs.version }}
           ssh_keyscan_types: rsa,ecdsa,ed25519
           force_push: 'true'
       - name: Publish cnspec AUR package
@@ -92,7 +70,7 @@ jobs:
           commit_username: ${{ secrets.AUR_USERNAME }}
           commit_email: ${{ secrets.AUR_EMAIL }}
           ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
-          commit_message: ${{ needs.setup.outputs.version }}
+          commit_message: ${{ inputs.version }}
           ssh_keyscan_types: rsa,ecdsa,ed25519
           force_push: 'true'
       - name: Publish mondoo AUR package
@@ -105,7 +83,7 @@ jobs:
           commit_username: ${{ secrets.AUR_USERNAME }}
           commit_email: ${{ secrets.AUR_EMAIL }}
           ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
-          commit_message: ${{ needs.setup.outputs.version }}
+          commit_message: ${{ inputs.version }}
           ssh_keyscan_types: rsa,ecdsa,ed25519
           force_push: 'true'
           assets:

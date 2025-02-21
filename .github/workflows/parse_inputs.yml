@@ -1,0 +1,79 @@
+name: Parse and return version
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: 'Package Version'
+        required: true
+        default: '8.99.99'
+        type: 'string'
+      name:
+        description: 'Package Name'
+        required: false
+        default: 'mondoo'
+        type: 'string'
+      skip-publish:
+        description: 'Skip publish?'
+        required: false
+        default: "false"
+        type: string
+      bucket:
+        description: 'Name of google storage bucket to upload to'
+        required: false
+        default: "releases-com-test"
+        type: string
+    outputs:
+      skip-publish: 
+        value: ${{ jobs.parse-inputs.outputs.skip-publish }}
+      bucket: 
+        value: ${{ jobs.parse-inputs.outputs.bucket }}
+      version: 
+        value: ${{ jobs.parse-inputs.outputs.version }}
+      trimmed-version: 
+        value: ${{ jobs.parse-inputs.outputs.trimmed-version }}
+      name: 
+        value: ${{ jobs.parse-inputs.outputs.name }}
+ 
+
+jobs:
+  parse-inputs:
+    runs-on: ubuntu-latest
+    # Default values for variables when we are triggered via github event
+    env:
+      SKIP_PUBLISH: ${{ inputs.skip-publish || 'false' }}
+      BUCKET: ${{ inputs.bucket || 'releases-us.mondoo.io'}}
+      NAME: ${{ inputs.name || 'mondoo' }}
+    # Sanitized values, to be used instead of `inputs.XXXX`
+    outputs:
+      skip-publish: ${{ steps.evaluate.outputs.skip-publish }}
+      bucket: ${{ steps.evaluate.outputs.bucket }}
+      version: ${{ steps.evaluate.outputs.version }}
+      trimmed-version: ${{ steps.evaluate.outputs.trimmed_version }}
+      name: ${{ steps.evaluate.outputs.name }}
+    steps:
+      - name: Set Version (Workflow Dispatch)
+        if: ${{ github.event_name != 'release' }}
+        run: |
+          echo "VERSION=${{ inputs.version }}" >> "$GITHUB_ENV"
+      - name: Set Version (Release Event)
+        if: ${{ github.event_name == 'release' }}
+        run: |
+          echo "VERSION=${{ github.event.release.tag_name }}" >> "$GITHUB_ENV"
+      - name: Set input variables
+        id: evaluate
+        run: |
+          # strip leading 'v', e.g. v1.0.0
+          V="${VERSION##v}"
+          echo "Version: $V"
+          echo "version=${V}" >> "$GITHUB_OUTPUT"
+          # strip trailing pre-release version e.g. 1.0.0-beta
+          echo "trimmed_version=${V%%-*}" >> "$GITHUB_OUTPUT"
+          if [[ ! ${V%%-*} =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid version: $VERSION"
+            exit 1
+          fi
+
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "skip-publish=$SKIP_PUBLISH" >> "$GITHUB_OUTPUT"
+          echo "bucket=$BUCKET" >> "$GITHUB_OUTPUT"

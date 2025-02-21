@@ -16,7 +16,7 @@ jobs:
       - name: Clean Version
         id: version
         run: |
-          VERSON=${{ steps.version.outputs.version | replace('v', '') }}
+          VERSION="${{ inputs.version}}"
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
 

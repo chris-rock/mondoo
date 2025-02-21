@@ -1,0 +1,94 @@
+name: 'PKG: Package, Release, Reindex'
+
+on:
+  release:
+    types: [released]
+  workflow_dispatch:
+    inputs:
+      skip-publish:
+        type: boolean
+        default: false
+      version:
+        description: 'Package Version'
+        required: true
+        default: '8.99.99'
+        type: 'string'
+      bucket:
+        description: 'GCP Release Bucket Name'
+        required: true
+        default: 'releases-us.mondoo.io'
+        type: choice
+        options:
+          - 'releases-us.mondoo.io'
+          - 'releases-com-test'
+      reindex-path:
+        description: 'Path to Reindex (Optional)'
+        required: false
+        type: string
+      reindex-full:
+        description: 'Regenerate ALL indexes (Intensive!)'
+        required: false
+        type: boolean
+jobs:
+  parse-inputs:
+    uses: ./.github/workflows/parse_inputs.yml
+    with:
+      skip-publish: ${{ inputs.skip-publish }}
+      version: ${{ inputs.version }}
+
+  build-arch:
+    uses: ./.github/workflows/pkg_arch-aur.yaml
+    needs: [ parse-inputs ]
+    with:
+      version: ${{ needs.parse-inputs.outputs.version }}
+      skip: ${{ needs.parse-inputs.outputs.skip-publish == 'true' }}
+  build-msi:
+    uses: ./.github/workflows/pkg_msi.yaml
+    needs: [ parse-inputs ]
+    with:
+      version: ${{ needs.parse-inputs.outputs.version }}
+      skip-publish: ${{ needs.parse-inputs.outputs.skip-publish == 'true' }}
+      bucket: ${{ needs.parse-inputs.outputs.bucket }}
+  build-chocolatey:
+    uses: ./.github/workflows/pkg_chocolatey.yaml
+    needs: [ parse-inputs ]
+    with:
+      version: ${{ github.event.inputs.version }}
+      skip-publish: ${{ needs.parse-inputs.outputs.skip-publish == 'true' }}
+  build-macos:
+    uses: ./.github/workflows/pkg_macos.yaml
+    needs: [ parse-inputs ]
+    with:
+      version: ${{ github.event.inputs.version }}
+      skip-publish: ${{ needs.parse-inputs.outputs.skip-publish == 'true' }}
+      bucket: ${{ needs.parse-inputs.outputs.bucket }}
+  build-mondoo-pkgs:
+    uses: ./.github/workflows/release_mondoo_pkgs.yaml
+    needs: [ parse-inputs ]
+    with:
+      version: ${{ github.event.inputs.version }}
+      skip-publish: ${{ needs.parse-inputs.outputs.skip-publish == 'true' }}
+      bucket: ${{ needs.parse-inputs.outputs.bucket }}
+  reindex:
+    runs-on: ubuntu-latest
+    needs: [ parse-inputs, build-arch, build-msi, build-chocolatey, build-macos, build-mondoo-pkgs ]
+    steps:
+    # fetch a token for the mondoo-mergebot app
+    - name: Generate token
+      id: generate-token
+      uses: actions/create-github-app-token@v1
+      with:
+        app-id: ${{ secrets.MONDOO_MERGEBOT_APP_ID }}
+        private-key: ${{ secrets.MONDOO_MERGEBOT_APP_PRIVATE_KEY }}
+    - name: Reindex folder on releaser.mondoo.com
+      uses: peter-evans/repository-dispatch@v3
+      env:
+        VERSION: ${{ needs.parse-inputs.outputs.version }}
+      with:
+        token: ${{ steps.generate-token.outputs.token }}
+        repository: "mondoohq/releasr"
+        event-type: reindex
+        client-payload: '{
+          "reindex-path": "mondoo/${{ env.VERSION }}",
+          "bucket": "releases-us.mondoo.io"
+          }'

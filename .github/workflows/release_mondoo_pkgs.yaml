@@ -1,41 +1,49 @@
 name: "Build & Release mondoo Meta-Package"
 
 on:
-  release:
-    types: [released]
+  workflow_call:
+    inputs:
+      version:
+        description: 'Version that should be released'
+        required: true
+        default: '8.99.99'
+        type: 'string'
+      skip-publish:
+        description: 'Skip publish?'
+        required: false
+        default: false
+        type: boolean
+      bucket:
+        description: 'GCP Release Bucket Name'
+        required: true
+        default: 'releases-us.mondoo.io'
+        type: string
   workflow_dispatch:
     inputs:
       version:
         description: 'Version that should be released'
         required: true
         default: '1.2.3'
+        type: 'string'
+      skip-publish:
+        description: 'Skip publish?'
+        required: false
+        default: false
+        type: boolean
+      bucket:
+        description: 'GCP Release Bucket Name'
+        required: true
+        default: 'releases-us.mondoo.io'
+        type: choice
+        options:
+          - 'releases-us.mondoo.io'
+          - 'releases-com-test'
 
 jobs:
   build-mondoo-payloads:
     runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Version from Workflow Dispatch
-        if: github.event_name == 'workflow_dispatch'
-        run: |
-          echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_ENV
-      - name: Version from Release Tag
-        if: github.event_name == 'release'
-        run: |
-          echo "VERSION=${{ github.event.release.tag_name }}" >> $GITHUB_ENV
-      - name: Unify and Validate Version
-        id: version
-        run: |
-          VERSION=$(echo $VERSION | sed 's/^v//')
-          if [[ ! $VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Invalid version: $VERSION"
-            exit 1
-          fi
-          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
       - name: Create destination folder
         run: |
           cd  helper
@@ -75,29 +83,18 @@ jobs:
           cd helper/packages
           sha256sum *linux* > checksums.linux.txt
       - name: Upload files to releases.mondoo.com
+        if: ${{ !inputs.skip-publish }}
         run: |
-          gsutil cp -r helper/packages/* gs://releases-us.mondoo.io/mondoo/${VERSION}/
+          gsutil cp -r helper/packages/* gs://${{ inputs.bucket }}/mondoo/${{ inputs.version }}/
       - name: Upload files to GitHub Release Page
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.version.outputs.version }}
+          tag_name: v${{ inputs.version }}
           files: helper/packages/*
-
-      - name: Reindex folder on releaser.mondoo.com
-        uses: peter-evans/repository-dispatch@v3
-        with:
-          token: ${{ secrets.REPO_API_TOKEN }}
-          repository: "mondoohq/releasr"
-          event-type: reindex
-          client-payload: '{
-              "reindex-path": "mondoo/${{ steps.version.outputs.version }}",
-              "bucket": "releases-us.mondoo.io"
-            }'
-
       - name: Create Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: mondoo-${{ steps.version.outputs.version }}
+          name: mondoo-${{ inputs.version }}
           path: helper/packages/
           retention-days: 7
 
@@ -109,20 +106,11 @@ jobs:
       matrix:
         repo: ["mondoohq/repobuilder"]
     steps:
-      - uses: actions/checkout@v4
-      - name: Repository Dispatch (Workflow Dispatch)
-        uses: peter-evans/repository-dispatch@v3
-        if: github.event_name == 'workflow_dispatch'
-        with:
-          token: ${{ secrets.REPO_API_TOKEN }}
-          repository: ${{ matrix.repo }}
-          event-type: update
-          client-payload: '{"version": "${{ needs.build-mondoo-payloads.outputs.version }}"}'
       - name: Repository Dispatch (Release)
         uses: peter-evans/repository-dispatch@v3
-        if: github.event_name == 'release'
+        if: ${{ !inputs.skip-publish }}
         with:
           token: ${{ secrets.REPO_API_TOKEN }}
           repository: ${{ matrix.repo }}
           event-type: update
-          client-payload: '{"version": "${{ needs.build-mondoo-payloads.outputs.version }}"}'
+          client-payload: '{"version": "${{ inputs.version }}"}'
