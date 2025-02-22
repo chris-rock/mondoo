@@ -1,0 +1,102 @@
+name: Releases.mondoo.com File Validation
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'  # Run every 15 minutes
+  workflow_dispatch:  # Allow manual triggers
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests
+    
+    - name: Validate Mondoo releases
+      id: mondoo
+      continue-on-error: true
+      run: |
+        python test/releases/validate_release.py mondoo > mondoo_output.txt
+        echo "mondoo_status=$?" >> $GITHUB_ENV
+        cat mondoo_output.txt
+    
+    - name: Validate cnquery releases
+      id: cnquery
+      continue-on-error: true
+      run: |
+        python test/releases/validate_release.py cnquery > cnquery_output.txt
+        echo "cnquery_status=$?" >> $GITHUB_ENV
+        cat cnquery_output.txt
+    
+    - name: Validate cnspec releases
+      id: cnspec
+      continue-on-error: true
+      run: |
+        python test/releases/validate_release.py cnspec > cnspec_output.txt
+        echo "cnspec_status=$?" >> $GITHUB_ENV
+        cat cnspec_output.txt
+    
+    - name: Send Slack notification on failure
+      if: env.mondoo_status != '0' || env.cnquery_status != '0' || env.cnspec_status != '0'
+      uses: slackapi/slack-github-action@v1.24.0
+      with:
+        channel-id: 'C07QZDJFF89'  # Replace with your channel ID
+        payload: |
+          {
+            "text": "⚠️ Release File Validation Failures Detected",
+            "blocks": [
+              {
+                "type": "header",
+                "text": {
+                  "type": "plain_text",
+                  "text": "⚠️ Release File Validation Failures"
+                }
+              },
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": "*Validation Results:*"
+                }
+              },
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": "${{ env.mondoo_status != '0' && '*Mondoo:* ❌ Failed\n' || '*Mondoo:* ✅ Passed\n' }}${{ env.cnquery_status != '0' && '*cnquery:* ❌ Failed\n' || '*cnquery:* ✅ Passed\n' }}${{ env.cnspec_status != '0' && '*cnspec:* ❌ Failed' || '*cnspec:* ✅ Passed' }}"
+                }
+              },
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": "*Details:*\n```${{ env.mondoo_status != '0' && cat mondoo_output.txt || '' }}${{ env.cnquery_status != '0' && cat cnquery_output.txt || '' }}${{ env.cnspec_status != '0' && cat cnspec_output.txt || '' }}```"
+                }
+              },
+              {
+                "type": "context",
+                "elements": [
+                  {
+                    "type": "mrkdwn",
+                    "text": "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View GitHub Action Run>"
+                  }
+                ]
+              }
+            ]
+          }
+      env:
+        SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+    
+    - name: Final status check
+      if: env.mondoo_status != '0' || env.cnquery_status != '0' || env.cnspec_status != '0'
+      run: exit 1
